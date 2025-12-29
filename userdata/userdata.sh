@@ -5,6 +5,9 @@ amazon-linux-extras install docker -y
 systemctl enable docker
 systemctl start docker
 
+# Start a simple web server on port 30080 for testing
+docker run -d -p 30080:80 nginx:alpine
+
 # Install kubectl
 curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 chmod +x kubectl
@@ -22,6 +25,30 @@ EOF
 yum install -y kubelet kubeadm kubectl
 systemctl enable kubelet
 systemctl start kubelet
+
+# Initialize Kubernetes cluster
+kubeadm init --pod-network-cidr=10.244.0.0/16
+
+# Setup kubectl for root user
+mkdir -p /root/.kube
+cp -i /etc/kubernetes/admin.conf /root/.kube/config
+chown root:root /root/.kube/config
+
+# Install Flannel CNI
+kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+
+# Allow scheduling on master node
+kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+
+# Install ArgoCD
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+# Wait for ArgoCD to be ready
+sleep 60
+
+# Expose ArgoCD server via NodePort
+kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"NodePort","ports":[{"port":443,"targetPort":8080,"nodePort":30443}]}}'
 
 # Optional: join cluster if token is known
 # kubeadm join <MASTER_IP>:6443 --token <TOKEN> --discovery-token-ca-cert-hash sha256:<HASH>
